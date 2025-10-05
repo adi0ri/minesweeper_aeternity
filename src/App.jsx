@@ -1,19 +1,20 @@
 import { useState, useEffect } from 'react';
 import './App.css';
 import { initAeSdk, connectToWallet, initContract, callContract, getAeSdk } from './lib/aeternity';
+import contractSource from '../contracts/Minesweeper.aes?raw';
 
-// The contractSource can remain the same
-//import contractSource from '../contracts/Minesweeper.aes?raw';
-//import contractSource from '../contracts/Hello.aes?raw'
+// Import treasury helpers and configuration
+import { getTreasuryAddress } from './lib/treasury';
+import { payoutReward } from './lib/treasury';
+import { DEFAULT_REVEAL_FEE, DEFAULT_REWARD } from './treasury.config';
 
-import contractSource from '../contracts/Minesweeper.aes?raw'
 
-//console.log(contractSource);
 function App() {
-  const [isSdkReady, setIsSdkReady] = useState(false); // Use a boolean for SDK readiness
+  const [isSdkReady, setIsSdkReady] = useState(false);
   const [address, setAddress] = useState(null);
   const [balance, setBalance] = useState(null);
   const [contract, setContract] = useState(null);
+  const [contractAddress, setContractAddress] = useState(null); // New state for contract address
   const [grid, setGrid] = useState(Array(100).fill(null));
   const [status, setStatus] = useState('Initializing Aeternity SDK...');
 
@@ -37,7 +38,6 @@ function App() {
       const walletInfo = await connectToWallet();
       setAddress(walletInfo.address);
       
-      // The main fix: use the exported getter function
       const sdk = getAeSdk();
       const balance = await sdk.getBalance(walletInfo.address);
       setBalance(balance);
@@ -51,12 +51,20 @@ function App() {
   const handleDeployContract = async () => {
     try {
       setStatus('Deploying contract...');
-      console.log(contractSource.split('\n').slice(0, 5).join('\n'));
-
-
       const contractInstance = await initContract(contractSource);
       setContract(contractInstance);
-      setStatus('Contract deployed. Set treasures to start the game.');
+
+      // Robustly get and set the deployed contract's address
+      const deployedAddress = contractInstance.deployInfo.address;
+      setContractAddress(deployedAddress);
+      setStatus('Contract deployed. Configuring treasury...');
+
+      // Automatically set treasury, fee, and reward after deployment
+      await callContract('set_treasury', [getTreasuryAddress()]);
+      await callContract('set_reveal_fee', [Number(DEFAULT_REVEAL_FEE)]);
+      await callContract('set_reward_amount', [Number(DEFAULT_REWARD)]);
+
+      setStatus('Contract deployed & treasury configured. Set treasures to start the game.');
     } catch(error) {
       console.error(error);
       setStatus(`Contract deployment failed: ${error.message}`);
@@ -79,6 +87,8 @@ function App() {
     }
     try {
       await callContract('set_treasures', [treasures]);
+      // Reset grid on new treasures
+      setGrid(Array(100).fill(null));
       setStatus('Treasures set. Click on a tile to reveal.');
     } catch(error) {
       console.error(error);
@@ -91,28 +101,34 @@ function App() {
     const x = index % 10;
     const y = Math.floor(index / 10);
     const loc = { x, y };
-    const amount = 1000000000000000; // 0.001 AE
-
+    
     try {
       setStatus(`Revealing tile (${x},${y})...`);
-      // NOTE: The result of a stateful call does not directly return the value.
-      // We are optimistically updating the UI based on whether the call succeeds or fails.
-      // A more robust solution would be to query the contract state afterwards.
-      await callContract('reveal', [loc], { amount });
+      // The reveal fee is now set from the config file
+      await callContract('reveal', [loc], { amount: DEFAULT_REVEAL_FEE });
       
-      // Let's check the result from the contract state
-      // App.jsx
       const revealedMapResult = await callContract('get_revealed', [], { callStatic: true });
-
-      //const revealedMapResult = await callContract('get_revealed', [], {});
-      const isTreasure = revealedMapResult.decodedResult.find(([key, _val]) => key.x === x && key.y === y)[1];
+      const revealedTuple = revealedMapResult.decodedResult.find(([key, _val]) => key.x === x && key.y === y);
+      const isTreasure = revealedTuple ? revealedTuple[1] : false;
 
       const newGrid = [...grid];
       newGrid[index] = isTreasure;
       setGrid(newGrid);
       setStatus(`Tile (${x},${y}) revealed: ${isTreasure ? 'Treasure!' : 'Empty.'}`);
 
-      // Update balance
+      // If a treasure is found, trigger the reward payout from the treasury
+      if (isTreasure) {
+        setStatus('Treasure found! Treasury paying reward...');
+        try {
+          await payoutReward(contractAddress, address, loc, DEFAULT_REWARD);
+          setStatus(`Reward of ${(Number(DEFAULT_REWARD) / 1e18)} AE paid!`);
+        } catch (e) {
+          console.error(e);
+          setStatus(`Treasury payout failed: ${e.message}`);
+        }
+      }
+
+      // Update balance after reveal and potential reward
       const sdk = getAeSdk();
       const newBalance = await sdk.getBalance(address);
       setBalance(newBalance);
@@ -156,7 +172,7 @@ function App() {
       </header>
       <main className="p-4 flex flex-col items-center">
         <div className="controls space-x-2 mb-4">
-          <button onClick={handleDeployContract} disabled={!address} className="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded disabled:bg-gray-600">Deploy Contract</button>
+          <button onClick={handleDeployContract} disabled={!address || contract} className="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded disabled:bg-gray-600">Deploy Contract</button>
           <button onClick={handleSetTreasures} disabled={!contract} className="bg-green-500 hover:bg-green-700 text-white font-bold py-2 px-4 rounded disabled:bg-gray-600">Set Treasures</button>
           <button onClick={handleResetGame} disabled={!contract} className="bg-red-500 hover:bg-red-700 text-white font-bold py-2 px-4 rounded disabled:bg-gray-600">Reset Game</button>
         </div>

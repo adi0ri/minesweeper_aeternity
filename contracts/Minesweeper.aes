@@ -1,31 +1,99 @@
 contract Minesweeper =
+  // Existing record definitions
   record loc = { x : int, y : int }
-  record state = { owner : address, treasures : map(loc, bool), revealed : map(loc, bool) }
+  
+  // Extended state to include treasury and reward logic
+  record state = { 
+    owner : address, 
+    treasures : map(loc, bool), 
+    revealed : map(loc, bool),
+    treasury: address,
+    reveal_fee: int,
+    reward_amount: int,
+    rewarded: map(loc, bool) 
+  }
 
-  entrypoint init() = { owner = Call.caller, treasures = {}, revealed = {} }
+  // New events
+  datatype event =
+    Revealed(address player, int x, int y, bool is_treasure) |
+    RewardPaid(address player, int x, int y, int amount)
+
+  // Initialize new state fields
+  entrypoint init() = { 
+    owner = Call.caller, 
+    treasures = {}, 
+    revealed = {},
+    treasury = Call.caller, // Defaults to owner
+    reveal_fee = 0,
+    reward_amount = 0,
+    rewarded = {}
+  }
+
+  // --- Admin/Owner Entrypoints ---
+
+  stateful entrypoint set_treasury(addr : address) =
+    require(Call.caller == state.owner, "ONLY_OWNER")
+    put(state{ treasury = addr })
+
+  stateful entrypoint set_reveal_fee(fee : int) =
+    require(Call.caller == state.owner, "ONLY_OWNER")
+    put(state{ reveal_fee = fee })
+
+  stateful entrypoint set_reward_amount(amount : int) =
+    require(Call.caller == state.owner, "ONLY_OWNER")
+    put(state{ reward_amount = amount })
+
+  // --- Gameplay Entrypoints ---
 
   stateful entrypoint set_treasures(ts : list(loc)) =
     require(Call.caller == state.owner, "ONLY_OWNER")
-    put(state{ treasures = pairs_to_map(list_to_pairs(ts)), revealed = {} })
+    // Reset revealed and rewarded maps when new treasures are set
+    put(state{ treasures = pairs_to_map(list_to_pairs(ts)), revealed = {}, rewarded = {} })
 
-  stateful entrypoint reveal(p : loc) : bool =
+  // Reveal is now payable and forwards the fee
+  payable stateful entrypoint reveal(p : loc) =
     require(!Map.member(p, state.revealed), "ALREADY_REVEALED")
+    require(Call.value == state.reveal_fee, "INVALID_FEE")
+    
+    // Forward fee to treasury
+    Chain.spend(state.treasury, Call.value)
+    
     let hit = Map.member(p, state.treasures)
     put(state{ revealed[p] = hit })
-    hit
+    emit(Revealed(Call.caller, p.x, p.y, hit))
 
-  entrypoint get_revealed() : map(loc, bool) = state.revealed
+  // New treasury-only entrypoint to pay rewards
+  payable stateful entrypoint treasury_payout(player : address, loc : loc) =
+    require(Call.caller == state.treasury, "ONLY_TREASURY")
+    require(Map.member(loc, state.revealed) && state.revealed[loc] == true, "NOT_TREASURE_OR_NOT_REVEALED")
+    require(!Map.member(loc, state.rewarded) || state.rewarded[loc] == false, "ALREADY_PAID")
+    require(Call.value >= state.reward_amount, "REWARD_TOO_LOW")
+
+    // Pass-through payout from Treasury -> Contract -> Player
+    Chain.spend(player, Call.value)
+    put(state{ rewarded[loc] = true })
+    emit(RewardPaid(player, loc.x, loc.y, Call.value))
 
   stateful entrypoint reset_game() =
     require(Call.caller == state.owner, "ONLY_OWNER")
-    put(state{ treasures = {}, revealed = {} })
+    put(state{ treasures = {}, revealed = {}, rewarded = {} })
 
-  // ---- helpers (Sophia 4.0+ tuple types; no lambdas) ----
+  // --- Getters ---
+  
+  entrypoint get_revealed() : map(loc, bool) = state.revealed
+  entrypoint get_treasury() : address = state.treasury
+  entrypoint get_reveal_fee() : int = state.reveal_fee
+  entrypoint get_reward_amount() : int = state.reward_amount
+  entrypoint is_rewarded(loc : loc) : bool =
+    Map.lookup_default(loc, state.rewarded, false)
+
+
+  // ---- helpers ----
   function list_to_pairs(xs : list(loc)) : list((loc * bool)) =
     switch(xs)
       []       => []
       x :: xr  =>
-        let pair : (loc * bool) = (x, true)                 // value uses comma; type uses *
+        let pair : (loc * bool) = (x, true)
         pair :: list_to_pairs(xr)
 
   function pairs_to_map(ps : list((loc * bool))) : map(loc, bool) =
