@@ -89,11 +89,8 @@ export const initContract = async (sourceCode) => {
 
 export const callContract = async (fn, args = [], options = {}) => {
   if (!contract) throw new Error('Contract not initialized');
-
-  const { callStatic, ...rest } = options;
-  // Only do a dry-run when explicitly requested
-  const callOpts = callStatic ? { ...rest, callStatic: true } : { ...rest };
-
+  const isStatic = options.callStatic === true;          // <-- explicit only
+  const callOpts = isStatic ? { ...options, callStatic: true } : { ...options };
   return contract.$call(fn, args, callOpts);
 };
 

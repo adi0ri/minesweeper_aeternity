@@ -78,13 +78,15 @@ function App() {
     }
     setStatus('Setting treasures on the blockchain...');
     const treasures = [];
-    while (treasures.length < 10) {
+    while (treasures.length < 20) {
       const x = Math.floor(Math.random() * 10);
       const y = Math.floor(Math.random() * 10);
       if (!treasures.find(t => t.x === x && t.y === y)) {
         treasures.push({ x, y });
       }
+      console.log(treasures)
     }
+
     try {
       await callContract('set_treasures', [treasures]);
       // Reset grid on new treasures
@@ -107,9 +109,10 @@ function App() {
       // The reveal fee is now set from the config file
       await callContract('reveal', [loc], { amount: BigInt(DEFAULT_REVEAL_FEE) });
       
-      const revealedMapResult = await callContract('get_revealed', [], { callStatic: true });
-      const revealedTuple = revealedMapResult.decodedResult.find(([key, _val]) => key.x === x && key.y === y);
-      const isTreasure = revealedTuple ? revealedTuple[1] : false;
+      const res = await callContract('get_revealed', [], { callStatic: true });
+      const pairs = normalizeMapPairs(res.decodedResult);
+      const tuple = pairs.find(([key]) => key && key.x === x && key.y === y);
+      const isTreasure = !!(tuple && tuple[1]);
 
       const newGrid = [...grid];
       newGrid[index] = isTreasure;
@@ -150,6 +153,26 @@ function App() {
       console.error(error);
       setStatus(`Failed to reset game: ${error.message}`);
     }
+  };
+
+  const normalizeMapPairs = (decoded) => {
+    if (Array.isArray(decoded)) return decoded;                  // already pairs
+    if (decoded instanceof Map) return Array.from(decoded.entries());
+  
+    if (decoded && typeof decoded === 'object') {
+      // Object with string keys — try JSON first, then a loose fallback
+      return Object.entries(decoded).map(([k, v]) => {
+        let key = null;
+        try {
+          key = JSON.parse(k); // e.g. '{"x":3,"y":7}'
+        } catch {
+          const m = String(k).match(/(-?\d+)\D+(-?\d+)/); // e.g. "3,7" or "(3,7)"
+          key = m ? { x: Number(m[1]), y: Number(m[2]) } : { x: undefined, y: undefined };
+        }
+        return [key, v];
+      });
+    }
+    return [];
   };
 
   return (
