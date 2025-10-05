@@ -1,50 +1,32 @@
 contract Minesweeper =
+  record loc = { x : int, y : int }
+  record state = { owner : address, treasures : map(loc, bool), revealed : map(loc, bool) }
 
-  record location = { x: int, y: int }
-  type locations = list(location)
+  entrypoint init() = { owner = Call.caller, treasures = {}, revealed = {} }
 
-  record state = {
-    treasures: locations,
-    revealed: map(location, bool),
-    owner: address,
-    game_over: bool
-    }
+  stateful entrypoint set_treasures(ts : list(loc)) =
+    require(Call.caller == state.owner, "ONLY_OWNER")
+    put(state{ treasures = pairs_to_map(list_to_pairs(ts)), revealed = {} })
 
-  entrypoint init() : state = 
-    {
-      treasures = [],
-      revealed = {},
-      owner = Call.caller,
-      game_over = false
-    }
+  stateful entrypoint reveal(p : loc) : bool =
+    require(!Map.member(p, state.revealed), "ALREADY_REVEALED")
+    let hit = Map.member(p, state.treasures)
+    put(state{ revealed[p] = hit })
+    hit
 
-  stateful entrypoint set_treasures(new_treasures: locations) =
-    require(Call.caller == state.owner, "Only owner can set treasures")
-    put(state{ treasures = new_treasures })
-
-  payable stateful entrypoint reveal(loc: location, amount: int) =
-    require(!state.game_over, "Game is over")
-    require(Map.lookup(loc, state.revealed) == None, "Tile already revealed")
-    require(amount > 0, "You must pay to play!")
-
-    let is_treasure = is_treasure(loc)
-    put(state{ revealed[loc] = is_treasure })
-
-    if(is_treasure)
-      Chain.spend(Call.caller, amount * 2)
-
-  entrypoint get_revealed() : map(location, bool) =
-    state.revealed
-
-  entrypoint is_treasure(loc: location) : bool =
-    switch(List.find((t) => t.x == loc.x && t.y == loc.y, state.treasures))
-      None => false
-      Some(_) => true
+  entrypoint get_revealed() : map(loc, bool) = state.revealed
 
   stateful entrypoint reset_game() =
-    require(Call.caller == state.owner, "Only owner can reset")
-    put(state{
-      treasures = [],
-      revealed = {},
-      game_over = false
-    })
+    require(Call.caller == state.owner, "ONLY_OWNER")
+    put(state{ treasures = {}, revealed = {} })
+
+  // ---- helpers (Sophia 4.0+ tuple types; no lambdas) ----
+  function list_to_pairs(xs : list(loc)) : list((loc * bool)) =
+    switch(xs)
+      []       => []
+      x :: xr  =>
+        let pair : (loc * bool) = (x, true)                 // value uses comma; type uses *
+        pair :: list_to_pairs(xr)
+
+  function pairs_to_map(ps : list((loc * bool))) : map(loc, bool) =
+    Map.from_list(ps)

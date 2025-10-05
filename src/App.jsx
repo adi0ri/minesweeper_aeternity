@@ -3,8 +3,12 @@ import './App.css';
 import { initAeSdk, connectToWallet, initContract, callContract, getAeSdk } from './lib/aeternity';
 
 // The contractSource can remain the same
-const contractSource = `...`;
+//import contractSource from '../contracts/Minesweeper.aes?raw';
+//import contractSource from '../contracts/Hello.aes?raw'
 
+import contractSource from '../contracts/Minesweeper.aes?raw'
+
+//console.log(contractSource);
 function App() {
   const [isSdkReady, setIsSdkReady] = useState(false); // Use a boolean for SDK readiness
   const [address, setAddress] = useState(null);
@@ -47,6 +51,9 @@ function App() {
   const handleDeployContract = async () => {
     try {
       setStatus('Deploying contract...');
+      console.log(contractSource.split('\n').slice(0, 5).join('\n'));
+
+
       const contractInstance = await initContract(contractSource);
       setContract(contractInstance);
       setStatus('Contract deployed. Set treasures to start the game.');

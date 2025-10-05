@@ -1,0 +1,29 @@
+contract Minesweeper =
+  record loc   = { x : int, y : int }
+
+  record state = {
+    owner     : address,
+    treasures : map(loc, bool),
+    revealed  : map(loc, bool)
+  }
+
+  entrypoint init() =
+    { owner = Call.caller, treasures = {}, revealed = {} }
+
+  stateful entrypoint set_treasures(ts : list(loc)) =
+    require(Call.caller == state.owner, "ONLY_OWNER")
+    let tmap = Map.from_list(List.map(fn(t) => (t, true), ts))
+    put(state{ treasures = tmap, revealed = {} })
+
+  stateful entrypoint reveal(p : loc) : bool =
+    require(!Map.member(p, state.revealed), "ALREADY_REVEALED")
+    let is_treasure = Map.member(p, state.treasures)
+    put(state{ revealed[p] = is_treasure })
+    is_treasure
+
+  entrypoint get_revealed() : map(loc, bool) =
+    state.revealed
+
+  stateful entrypoint reset_game() =
+    require(Call.caller == state.owner, "ONLY_OWNER")
+    put(state{ treasures = {}, revealed = {} })

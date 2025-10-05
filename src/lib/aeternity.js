@@ -1,16 +1,17 @@
 import {
   AeSdkAepp,
-  walletDetector,
-  BrowserWindowMessageConnection,
   Node,
+  BrowserWindowMessageConnection,
+  walletDetector,
+  CompilerHttp,
+  Contract,
 } from '@aeternity/aepp-sdk';
 
-const TESTNET_NODE_URL = 'https://testnet.aeternity.io';
-const COMPILER_URL = 'https://compiler.aeternity.io';
+const NODE_URL = 'https://testnet.aeternity.io';
+const COMPILER_URL = `${window.location.origin}/compiler`;
 
 let aeSdk;
 let contract;
-
 export const getAeSdk = () => {
   if (!aeSdk) throw new Error('AeSdk is not initialized');
   return aeSdk;
@@ -19,11 +20,18 @@ export const getAeSdk = () => {
 export const initAeSdk = async () => {
   if (aeSdk) return aeSdk;
 
+  const nodeInstance = new Node(NODE_URL);
+  const compiler = new CompilerHttp(COMPILER_URL);
+
   aeSdk = new AeSdkAepp({
-    name: 'Treasure Hunt DApp',
-    nodes: [{ name: 'testnet', instance: new Node(TESTNET_NODE_URL) }],
-    compilerUrl: COMPILER_URL,
+    name: 'Minesweeper DApp',
+    nodes: [{ name: 'testnet', instance: nodeInstance }],
+    onCompiler: compiler,
   });
+
+  // connect wallet popup
+  const connection = new BrowserWindowMessageConnection();
+  walletDetector(connection);
 
   return aeSdk;
 };
@@ -85,19 +93,20 @@ export const connectToWallet = async () => {
   });
 };
 
-
-
-
-export const initContract = async (source) => {
-  if (!aeSdk) throw new Error('AeSdk is not initialized');
-  const contractInstance = await aeSdk.initializeContract({ source });
-  await contractInstance.$deploy([]);
+export const initContract = async (sourceCode) => {
+  if (!aeSdk) throw new Error('AeSdk not initialized');
+  const contractInstance = await Contract.initialize({
+    ...aeSdk.getContext(), // injects node + account + compiler
+    sourceCode,
+  });
+  await contractInstance.$deploy([]); // or await contractInstance.init(...)
   contract = contractInstance;
   return contract;
 };
 
-export const callContract = async (func, args = [], options = {}) => {
-  if (!contract) throw new Error('Contract is not initialized');
-  const result = await contract.$call(func, args, options);
+// -------- Call contract entrypoints ----------
+export const callContract = async (fn, args = [], options = {}) => {
+  if (!contract) throw new Error('Contract not initialized');
+  const result = await contract.methods[fn](...(args ?? []), options);
   return result;
 };
