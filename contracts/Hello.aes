@@ -1,4 +1,0 @@
-contract Hello =
-  record state = { owner : address }
-  entrypoint init() = { owner = Call.caller }
-  entrypoint ping() : string = "pong"

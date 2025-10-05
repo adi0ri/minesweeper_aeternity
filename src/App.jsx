@@ -101,7 +101,10 @@ function App() {
       await callContract('reveal', [loc], { amount });
       
       // Let's check the result from the contract state
-      const revealedMapResult = await callContract('get_revealed', [], {});
+      // App.jsx
+      const revealedMapResult = await callContract('get_revealed', [], { callStatic: true });
+
+      //const revealedMapResult = await callContract('get_revealed', [], {});
       const isTreasure = revealedMapResult.decodedResult.find(([key, _val]) => key.x === x && key.y === y)[1];
 
       const newGrid = [...grid];

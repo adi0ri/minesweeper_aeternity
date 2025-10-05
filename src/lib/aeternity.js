@@ -104,9 +104,15 @@ export const initContract = async (sourceCode) => {
   return contract;
 };
 
-// -------- Call contract entrypoints ----------
 export const callContract = async (fn, args = [], options = {}) => {
   if (!contract) throw new Error('Contract not initialized');
-  const result = await contract.methods[fn](...(args ?? []), options);
-  return result;
+
+  // Treat calls without `amount` as read-only by default
+  const isView = !('amount' in options) || options.amount == null;
+  const callOpts = isView ? { ...options, callStatic: true } : options;
+
+  // Works for both stateful & static entrypoints
+  const res = await contract.$call(fn, args, callOpts);
+  return res;
 };
+
