@@ -7,9 +7,12 @@ import contractSource from '../contracts/Minesweeper.aes?raw';
 import { getTreasuryAddress, revealTileWithTreasury } from './lib/treasury';
 import { DEFAULT_REVEAL_FEE, DEFAULT_REWARD } from './treasury.config';
 
+// 🏰 Dungeon background image — place your file at src/assets/dungeon.jpg
+import dungeonBg from './assets/dungeon.jpg';
+
 const GRID_W = 3;
 const GRID_H = 3;
-const BOMB_COUNT = 1; // 👈 tune if you want more bombs
+const MONSTER_COUNT = 1; // 👈 tune if you want more monsters
 
 function App() {
   const [isSdkReady, setIsSdkReady] = useState(false);
@@ -18,11 +21,11 @@ function App() {
   const [contract, setContract] = useState(null);
   const [contractAddress, setContractAddress] = useState(null);
 
-  // grid holds: null (unrevealed) | true (treasure) | false (empty) | 'bomb' (bomb hit)
+  // grid holds: null (unrevealed) | true (treasure) | false (empty) | 'monster' (monster encountered)
   const [grid, setGrid] = useState(Array(GRID_W * GRID_H).fill(null));
 
   const [status, setStatus] = useState('Initializing Aeternity SDK...');
-  const [bombs, setBombs] = useState([]);    // [{x,y}]
+  const [monsters, setMonsters] = useState([]); // [{x,y}]
   const [gameOver, setGameOver] = useState(false);
 
   useEffect(() => {
@@ -82,7 +85,7 @@ function App() {
       return;
     }
 
-    setStatus('Setting treasures on the blockchain...');
+    setStatus('Setting treasures in the dungeon...');
     const treasures = [];
     while (treasures.length < 4) {
       const x = Math.floor(Math.random() * GRID_W);
@@ -90,22 +93,22 @@ function App() {
       if (!treasures.find(t => t.x === x && t.y === y)) treasures.push({ x, y });
     }
 
-    // 👉 client-side bombs: never overlap with any treasure
-    const bombsLocal = [];
-    while (bombsLocal.length < BOMB_COUNT) {
+    // 🧌 Client-side monsters: never overlap with any treasure
+    const monstersLocal = [];
+    while (monstersLocal.length < MONSTER_COUNT) {
       const x = Math.floor(Math.random() * GRID_W);
       const y = Math.floor(Math.random() * GRID_H);
       const clashTreasure = treasures.some(t => t.x === x && t.y === y);
-      const clashBomb = bombsLocal.some(b => b.x === x && b.y === y);
-      if (!clashTreasure && !clashBomb) bombsLocal.push({ x, y });
+      const clashMonster = monstersLocal.some(m => m.x === x && m.y === y);
+      if (!clashTreasure && !clashMonster) monstersLocal.push({ x, y });
     }
 
     try {
       await callContract('set_treasures', [treasures]);
-      setBombs(bombsLocal);
+      setMonsters(monstersLocal);
       setGrid(Array(GRID_W * GRID_H).fill(null));
       setGameOver(false);
-      setStatus('Treasures set. Click a tile to reveal — but beware of bombs 💣!');
+      setStatus('Treasures set. Step carefully — monsters lurk in the dark 🧌!');
     } catch (error) {
       console.error(error);
       setStatus(`Failed to set treasures: ${error.message}`);
@@ -118,15 +121,15 @@ function App() {
     const x = index % GRID_W;
     const y = Math.floor(index / GRID_W);
 
-    // 💣 If this is a bomb, end the game immediately (no chain call)
-    if (bombs.some(b => b.x === x && b.y === y)) {
+    // 🧌 Monster encounter ends the run immediately (no chain call)
+    if (monsters.some(m => m.x === x && m.y === y)) {
       setGrid((g) => {
         const ng = [...g];
-        ng[index] = 'bomb';
+        ng[index] = 'monster';
         return ng;
       });
       setGameOver(true);
-      setStatus('💥 Boom! You hit a bomb. Game over.');
+      setStatus('🧌 A goblin ambush! You were defeated. Game over.');
       return;
     }
 
@@ -152,24 +155,23 @@ function App() {
 
   const handleResetGame = async () => {
     if (!contract) return;
-    setStatus('Resetting game...');
+    setStatus('Resetting dungeon...');
     try {
       await callContract('reset_game', []);
       setGrid(Array(GRID_W * GRID_H).fill(null));
-      setBombs([]);
+      setMonsters([]);
       setGameOver(false);
-      setStatus('Game reset. Set treasures to start a new game.');
+      setStatus('Dungeon reset. Set treasures to start a new run.');
     } catch (error) {
       console.error(error);
-      setStatus(`Failed to reset game: ${error.message}`);
+      setStatus(`Failed to reset: ${error.message}`);
     }
   };
 
-  // Existing helper kept as-is
+  // (Unused now, kept if you need it elsewhere)
   const normalizeMapPairs = (decoded) => {
     if (Array.isArray(decoded)) return decoded;
     if (decoded instanceof Map) return Array.from(decoded.entries());
-
     if (decoded && typeof decoded === 'object') {
       return Object.entries(decoded).map(([k, v]) => {
         let key = null;
@@ -186,65 +188,75 @@ function App() {
   };
 
   return (
-    <div className="App bg-gray-900 text-white min-h-screen font-mono">
-      <header className="App-header p-4 flex justify-between items-center border-b border-cyan-700">
-        <h1 className="text-3xl text-cyan-400">Web3 Treasure Hunt</h1>
-        {address ? (
-          <div className="text-sm text-right">
-            <p className="truncate">Address: <span className="text-cyan-300">{address}</span></p>
-            <p>Balance: <span className="text-green-400">{(Number(String(balance)) / 1e18).toFixed(4)} AE</span></p>
+    <div
+      className="App min-h-screen font-mono"
+      style={{
+        backgroundImage: `url(${dungeonBg})`,
+        backgroundSize: 'cover',
+        backgroundPosition: 'center',
+      }}
+    >
+      {/* dark overlay for readability */}
+      <div className="min-h-screen bg-black/20 text-white">
+        <header className="App-header p-4 flex justify-between items-center border-b border-cyan-700">
+          <h1 className="text-3xl text-cyan-400">Aeternity Dungeon</h1>
+          {address ? (
+            <div className="text-sm text-right">
+              <p className="truncate">Address: <span className="text-cyan-300">{address}</span></p>
+              <p>Balance: <span className="text-green-400">{(Number(String(balance)) / 1e18).toFixed(4)} AE</span></p>
+            </div>
+          ) : (
+            <button
+              onClick={handleConnectWallet}
+              disabled={!isSdkReady}
+              className="bg-cyan-500 hover:bg-cyan-700 text-white font-bold py-2 px-4 rounded disabled:bg-gray-600">
+              Connect Wallet
+            </button>
+          )}
+        </header>
+
+        <main className="p-4 flex flex-col items-center">
+          <div className="controls space-x-2 mb-4">
+            <button onClick={handleDeployContract} disabled={!address || contract} className="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded disabled:bg-gray-600">Deploy Contract</button>
+            <button onClick={handleSetTreasures} disabled={!contract} className="bg-green-500 hover:bg-green-700 text-white font-bold py-2 px-4 rounded disabled:bg-gray-600">Set Treasures</button>
+            <button onClick={handleResetGame} disabled={!contract} className="bg-red-500 hover:bg-red-700 text-white font-bold py-2 px-4 rounded disabled:bg-gray-600">Reset Dungeon</button>
           </div>
-        ) : (
-          <button
-            onClick={handleConnectWallet}
-            disabled={!isSdkReady}
-            className="bg-cyan-500 hover:bg-cyan-700 text-white font-bold py-2 px-4 rounded disabled:bg-gray-600">
-            Connect Wallet
-          </button>
-        )}
-      </header>
 
-      <main className="p-4 flex flex-col items-center">
-        <div className="controls space-x-2 mb-4">
-          <button onClick={handleDeployContract} disabled={!address || contract} className="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded disabled:bg-gray-600">Deploy Contract</button>
-          <button onClick={handleSetTreasures} disabled={!contract} className="bg-green-500 hover:bg-green-700 text-white font-bold py-2 px-4 rounded disabled:bg-gray-600">Set Treasures</button>
-          <button onClick={handleResetGame} disabled={!contract} className="bg-red-500 hover:bg-red-700 text-white font-bold py-2 px-4 rounded disabled:bg-gray-600">Reset Game</button>
-        </div>
+          <div className="grid grid-cols-3 gap-1 p-2 border border-cyan-800">
+            {grid.map((cell, index) => {
+              const isMonster = cell === 'monster';
+              const isTreasure = cell === true;
+              const isEmpty = cell === false;
+              const isRevealed = cell !== null;
 
-        <div className="grid grid-cols-3 gap-1 p-2 border border-cyan-800">
-          {grid.map((cell, index) => {
-            const isBomb = cell === 'bomb';
-            const isTreasure = cell === true;
-            const isEmpty = cell === false;
-            const isRevealed = cell !== null;
+              return (
+                <div
+                  key={index}
+                  className={`w-12 h-12 border-2 flex items-center justify-center transition-all duration-300
+                    ${isMonster
+                      ? 'bg-emerald-700 border-emerald-400 shadow-[0_0_18px_rgba(16,185,129,0.9)]'
+                      : isTreasure
+                      ? 'bg-yellow-500 border-yellow-300 shadow-[0_0_15px_rgba(250,204,21,0.8)]'
+                      : isEmpty
+                      ? 'bg-gray-700 border-gray-600'
+                      : 'bg-gray-900 border-cyan-400 hover:bg-cyan-900 hover:shadow-[0_0_15px_rgba(34,211,238,0.6)]'
+                    }
+                    ${gameOver && !isRevealed ? 'opacity-60' : ''} 
+                    ${gameOver || isRevealed ? 'cursor-not-allowed' : 'cursor-pointer'}
+                  `}
+                  onClick={() => !gameOver && handleTileClick(index)}
+                >
+                  {isMonster ? '🧌' : isTreasure ? '💎' : ''}
+                </div>
+              );
+            })}
+          </div>
 
-            return (
-              <div
-                key={index}
-                className={`w-12 h-12 border-2 flex items-center justify-center transition-all duration-300
-                  ${isBomb
-                    ? 'bg-red-700 border-red-400 shadow-[0_0_18px_rgba(248,113,113,0.9)]'
-                    : isTreasure
-                    ? 'bg-yellow-500 border-yellow-300 shadow-[0_0_15px_rgba(250,204,21,0.8)]'
-                    : isEmpty
-                    ? 'bg-gray-700 border-gray-600'
-                    : 'bg-gray-900 border-cyan-400 hover:bg-cyan-900 hover:shadow-[0_0_15px_rgba(34,211,238,0.6)]'
-                  }
-                  ${gameOver && !isRevealed ? 'opacity-60' : ''} 
-                  ${gameOver || isRevealed ? 'cursor-not-allowed' : 'cursor-pointer'}
-                `}
-                onClick={() => !gameOver && handleTileClick(index)}
-              >
-                {isBomb ? '💣' : isTreasure ? '💎' : ''}
-              </div>
-            );
-          })}
-        </div>
-
-        <div className="status mt-4 p-2 bg-gray-800 rounded w-full max-w-xl text-center">
-          <p className="text-cyan-300">{status}</p>
-        </div>
-      </main>
+          <div className="status mt-4 p-2 bg-gray-800/80 rounded w-full max-w-xl text-center">
+            <p className="text-cyan-300">{status}</p>
+          </div>
+        </main>
+      </div>
     </div>
   );
 }
