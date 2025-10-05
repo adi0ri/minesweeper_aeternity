@@ -105,7 +105,7 @@ function App() {
     try {
       setStatus(`Revealing tile (${x},${y})...`);
       // The reveal fee is now set from the config file
-      await callContract('reveal', [loc], { amount: DEFAULT_REVEAL_FEE });
+      await callContract('reveal', [loc], { amount: BigInt(DEFAULT_REVEAL_FEE) });
       
       const revealedMapResult = await callContract('get_revealed', [], { callStatic: true });
       const revealedTuple = revealedMapResult.decodedResult.find(([key, _val]) => key.x === x && key.y === y);
@@ -120,7 +120,7 @@ function App() {
       if (isTreasure) {
         setStatus('Treasure found! Treasury paying reward...');
         try {
-          await payoutReward(contractAddress, address, loc, DEFAULT_REWARD);
+          await payoutReward(contractAddress, address, loc, BigInt(DEFAULT_REWARD));
           setStatus(`Reward of ${(Number(DEFAULT_REWARD) / 1e18)} AE paid!`);
         } catch (e) {
           console.error(e);

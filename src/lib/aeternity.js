@@ -29,10 +29,6 @@ export const initAeSdk = async () => {
     onCompiler: compiler,
   });
 
-  // connect wallet popup
-  const connection = new BrowserWindowMessageConnection();
-  walletDetector(connection);
-
   return aeSdk;
 };
 
@@ -51,34 +47,20 @@ export const connectToWallet = async () => {
 
       try {
         // 1️⃣ Establish AEPP <-> Wallet bridge
-        await aeSdk.connectToWallet(newWallet.getConnection());
+        await aeSdk.connectToWallet(await newWallet.getConnection());
 
         // 2️⃣ Try normal subscribe
-        let accounts = {};
+        let currentAddress;
         try {
-          accounts = await aeSdk.subscribeAddress('subscribe', 'connected');
-        } catch {
-          console.warn('Fallback to manual account request...');
-        }
-
-        console.log('Raw wallet accounts response:', accounts);
-
-        // 3️⃣ Try all possible fields where wallet might store accounts
-        // After getting accounts
-        const currentObj = accounts?.address?.current;
-        if (!currentObj || typeof currentObj !== 'object') {
-        throw new Error('No valid Aeternity account found');
-        }
-
-        // Extract the key (actual AE address)
-        const currentAddress = Object.keys(currentObj)[0];
-
-        if (!currentAddress || !currentAddress.startsWith('ak_')) {
-        throw new Error('No valid Aeternity account found');
-        }
-
-        console.log('✅ Connected address:', currentAddress);
-        resolve({ address: currentAddress });
+          const accounts = await aeSdk.subscribeAddress('subscribe', 'connected');
+          const currentObj = accounts?.address?.current;
+          if (currentObj && typeof currentObj === 'object') {
+            currentAddress = Object.keys(currentObj)[0];
+          }
+      } catch {}
+      if (!currentAddress) currentAddress = await aeSdk.address(); // fallback
+      if (!currentAddress?.startsWith?.('ak_')) throw new Error('No valid Aeternity account found');
+      resolve({ address: currentAddress });
 
       } catch (err) {
         console.error('❌ Wallet connection error:', err);
@@ -96,23 +78,22 @@ export const connectToWallet = async () => {
 export const initContract = async (sourceCode) => {
   if (!aeSdk) throw new Error('AeSdk not initialized');
   const contractInstance = await Contract.initialize({
-    ...aeSdk.getContext(), // injects node + account + compiler
+    ...aeSdk.getContext(),
     sourceCode,
   });
-  await contractInstance.$deploy([]); // or await contractInstance.init(...)
+  const deployInfo = await contractInstance.$deploy([]);      // ⬅️ capture result
+  contractInstance.deployInfo = deployInfo;                    // ⬅️ attach it
   contract = contractInstance;
-  return contract;
+  return contractInstance; // App.jsx can read .deployInfo.address safely now
 };
 
 export const callContract = async (fn, args = [], options = {}) => {
   if (!contract) throw new Error('Contract not initialized');
 
-  // Treat calls without `amount` as read-only by default
-  const isView = !('amount' in options) || options.amount == null;
-  const callOpts = isView ? { ...options, callStatic: true } : options;
+  const { callStatic, ...rest } = options;
+  // Only do a dry-run when explicitly requested
+  const callOpts = callStatic ? { ...rest, callStatic: true } : { ...rest };
 
-  // Works for both stateful & static entrypoints
-  const res = await contract.$call(fn, args, callOpts);
-  return res;
+  return contract.$call(fn, args, callOpts);
 };
 

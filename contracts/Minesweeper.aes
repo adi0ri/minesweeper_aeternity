@@ -1,3 +1,5 @@
+include "String.aes"  // for String.concat
+
 contract Minesweeper =
   // Existing record definitions
   record loc = { x : int, y : int }
@@ -7,16 +9,15 @@ contract Minesweeper =
     owner : address, 
     treasures : map(loc, bool), 
     revealed : map(loc, bool),
-    treasury: address,
-    reveal_fee: int,
-    reward_amount: int,
-    rewarded: map(loc, bool) 
-  }
+    treasury : address,
+    reveal_fee : int,
+    reward_amount : int,
+    rewarded : map(loc, bool) }
 
   // New events
   datatype event =
-    Revealed(address player, int x, int y, bool is_treasure) |
-    RewardPaid(address player, int x, int y, int amount)
+    Revealed(address, int, int) |
+    RewardPaid(address, int, int)
 
   // Initialize new state fields
   entrypoint init() = { 
@@ -26,8 +27,7 @@ contract Minesweeper =
     treasury = Call.caller, // Defaults to owner
     reveal_fee = 0,
     reward_amount = 0,
-    rewarded = {}
-  }
+    rewarded = {} }
 
   // --- Admin/Owner Entrypoints ---
 
@@ -60,7 +60,7 @@ contract Minesweeper =
     
     let hit = Map.member(p, state.treasures)
     put(state{ revealed[p] = hit })
-    emit(Revealed(Call.caller, p.x, p.y, hit))
+    Chain.event(Revealed(Call.caller, p.x, p.y))
 
   // New treasury-only entrypoint to pay rewards
   payable stateful entrypoint treasury_payout(player : address, loc : loc) =
@@ -72,7 +72,7 @@ contract Minesweeper =
     // Pass-through payout from Treasury -> Contract -> Player
     Chain.spend(player, Call.value)
     put(state{ rewarded[loc] = true })
-    emit(RewardPaid(player, loc.x, loc.y, Call.value))
+    Chain.event(RewardPaid(player, loc.x, loc.y))
 
   stateful entrypoint reset_game() =
     require(Call.caller == state.owner, "ONLY_OWNER")
