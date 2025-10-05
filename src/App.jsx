@@ -169,7 +169,7 @@ function App() {
           ))}
         </div>
         <div className="status mt-4 p-2 bg-gray-800 rounded w-full max-w-xl text-center">
-          <p className="text-cyan-300">> {status}</p>
+          <p className="text-cyan-300"> {status}</p>
         </div>
       </main>
     </div>
