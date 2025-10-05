@@ -86,6 +86,8 @@ contract Minesweeper =
   entrypoint get_reward_amount() : int = state.reward_amount
   entrypoint is_rewarded(loc : loc) : bool =
     Map.lookup_default(loc, state.rewarded, false)
+  entrypoint revealed_at(p : loc) : bool =
+    Map.lookup_default(p, state.revealed, false)
 
 
   // ---- helpers ----

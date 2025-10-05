@@ -4,11 +4,10 @@ import { initAeSdk, connectToWallet, initContract, callContract, getAeSdk } from
 import contractSource from '../contracts/Minesweeper.aes?raw';
 
 // Import treasury helpers and configuration
-import { getTreasuryAddress } from './lib/treasury';
-import { payoutReward } from './lib/treasury';
+import { getTreasuryAddress, revealTileWithTreasury } from './lib/treasury';
 import { DEFAULT_REVEAL_FEE, DEFAULT_REWARD } from './treasury.config';
 
-
+const GRID_W = 10;
 function App() {
   const [isSdkReady, setIsSdkReady] = useState(false);
   const [address, setAddress] = useState(null);
@@ -61,9 +60,9 @@ function App() {
 
       // Automatically set treasury, fee, and reward after deployment
       await callContract('set_treasury', [getTreasuryAddress()]);
-      await callContract('set_reveal_fee', [Number(DEFAULT_REVEAL_FEE)]);
-      await callContract('set_reward_amount', [Number(DEFAULT_REWARD)]);
-
+      await callContract('set_reveal_fee', [String(DEFAULT_REVEAL_FEE)]);
+      await callContract('set_reward_amount', [String(DEFAULT_REWARD)]);
+      
       setStatus('Contract deployed & treasury configured. Set treasures to start the game.');
     } catch(error) {
       console.error(error);
@@ -99,47 +98,27 @@ function App() {
   };
 
   const handleTileClick = async (index) => {
-    if (!contract || grid[index] !== null) return;
-    const x = index % 10;
-    const y = Math.floor(index / 10);
-    const loc = { x, y };
-    
-    try {
-      setStatus(`Revealing tile (${x},${y})...`);
-      // The reveal fee is now set from the config file
-      await callContract('reveal', [loc], { amount: BigInt(DEFAULT_REVEAL_FEE) });
-      
-      const res = await callContract('get_revealed', [], { callStatic: true });
-      const pairs = normalizeMapPairs(res.decodedResult);
-      const tuple = pairs.find(([key]) => key && key.x === x && key.y === y);
-      const isTreasure = !!(tuple && tuple[1]);
-
-      const newGrid = [...grid];
-      newGrid[index] = isTreasure;
-      setGrid(newGrid);
-      setStatus(`Tile (${x},${y}) revealed: ${isTreasure ? 'Treasure!' : 'Empty.'}`);
-
-      // If a treasure is found, trigger the reward payout from the treasury
-      if (isTreasure) {
-        setStatus('Treasure found! Treasury paying reward...');
-        try {
-          await payoutReward(contractAddress, address, loc, BigInt(DEFAULT_REWARD));
-          setStatus(`Reward of ${(Number(DEFAULT_REWARD) / 1e18)} AE paid!`);
-        } catch (e) {
-          console.error(e);
-          setStatus(`Treasury payout failed: ${e.message}`);
-        }
-      }
-
-      // Update balance after reveal and potential reward
-      const sdk = getAeSdk();
-      const newBalance = await sdk.getBalance(address);
-      setBalance(newBalance);
-
-    } catch (error) {
-      console.error(error);
-      setStatus(`Error: ${error.message}`);
-    }
+      if (!contract || !contractAddress || grid[index] !== null) return;
+  
+    const x = index % GRID_W;
+    const y = Math.floor(index / GRID_W);
+  
+    // Use treasury.js for reveal + UI update + payout
+    await revealTileWithTreasury(x, y, {
+      updateTile: (x, y, isTreasure) => {
+        const idx = y * GRID_W + x;
+        setGrid((g) => {
+          const ng = [...g];
+          ng[idx] = isTreasure;
+          return ng;
+        });
+      },
+      setStatus,
+      address,
+      contractAddress,
+    }).then(({ newBalance }) => {
+      if (newBalance != null) setBalance(newBalance);
+    }).catch(() => {});
   };
 
   const handleResetGame = async () => {
@@ -182,7 +161,7 @@ function App() {
         {address ? (
           <div className="text-sm text-right">
             <p className="truncate">Address: <span className="text-cyan-300">{address}</span></p>
-            <p>Balance: <span className="text-green-400">{(balance / 1e18).toFixed(4)} AE</span></p>
+            <p>Balance: <span className="text-green-400">{(Number(String(balance)) / 1e18).toFixed(4)} AE</span></p>
           </div>
         ) : (
           <button 

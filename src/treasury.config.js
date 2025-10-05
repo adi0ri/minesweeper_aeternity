@@ -1,5 +1,5 @@
 export const TREASURY_PUBLIC_KEY  = "ak_9pDpuwyosLJ3BPGCEawbh1yo1b8MCnVdbV5Y3mH9HXMbQA6SZ";
-export const TREASURY_SECRET_KEY  = "1ae4ca03cfc50345e4f74169b9155d6f3c538a02793c9eee822e7a4dce58dd37";
+export const TREASURY_SECRET_KEY  = "sk_CqxtmDGE5bgimJjNGy5QoVwBDwqGh13hN5y6gLbJYXQud259v";
 
 // Defaults you can tweak (in aettos)
 export const DEFAULT_REVEAL_FEE   = 1000000000000000n; // 0.001 AE
